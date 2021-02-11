@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 # This script is meant to be used with Jamf Pro and makes use of Jamf Helper.
 # The idea behind this script is that it alerts the user that there are required OS
@@ -53,24 +53,24 @@ setDeferral (){
     DeferralPlist="${4}"
     
     if [[ "$DeferralType" == "date" ]]; then
-        DeferralDate="$(/usr/libexec/PlistBuddy -c "print :"$BundleID":date" "$DeferralPlist" 2>/dev/null)"
+        DeferralDate="$(/usr/libexec/PlistBuddy -c "print :""$BundleID"":date" "$DeferralPlist" 2>/dev/null)"
         # Set deferral date
         if [[ -n "$DeferralDate" ]] && [[ ! "$DeferralDate" == *"File Doesn't Exist"* ]]; then
             # PlistBuddy command example
             # /usr/libexec/PlistBuddy -c "set :"$BundleID":date '07/04/2019 11:21:51 +0000'" "$DeferralPlist"
-            /usr/libexec/PlistBuddy -c "set :"$BundleID":date $DeferralValue" "$DeferralPlist" 2>/dev/null
+            /usr/libexec/PlistBuddy -c "set :""$BundleID"":date $DeferralValue" "$DeferralPlist" 2>/dev/null
         else
             # PlistBuddy command example
             # /usr/libexec/PlistBuddy -c "add :"$BundleID":date date '07/04/2019 11:21:51 +0000'" "$DeferralPlist"
-            /usr/libexec/PlistBuddy -c "add :"$BundleID":date date $DeferralValue" "$DeferralPlist" 2>/dev/null
+            /usr/libexec/PlistBuddy -c "add :""$BundleID"":date date $DeferralValue" "$DeferralPlist" 2>/dev/null
         fi
     elif [[ "$DeferralType" == "count" ]]; then
-        DeferralCount="$(/usr/libexec/PlistBuddy -c "print :"$BundleID":count" "$DeferralPlist" 2>/dev/null)"
+        DeferralCount="$(/usr/libexec/PlistBuddy -c "print :""$BundleID"":count" "$DeferralPlist" 2>/dev/null)"
         # Set deferral count
         if [[ -n "$DeferralCount" ]] && [[ ! "$DeferralCount" == *"File Doesn't Exist"* ]]; then
-            /usr/libexec/PlistBuddy -c "set :"$BundleID":count $DeferralValue" "$DeferralPlist" 2>/dev/null
+            /usr/libexec/PlistBuddy -c "set :""$BundleID"":count $DeferralValue" "$DeferralPlist" 2>/dev/null
         else
-            /usr/libexec/PlistBuddy -c "add :"$BundleID":count integer $DeferralValue" "$DeferralPlist" 2>/dev/null
+            /usr/libexec/PlistBuddy -c "add :""$BundleID"":count integer $DeferralValue" "$DeferralPlist" 2>/dev/null
         fi
     else
         echo "Incorrect deferral type used"
@@ -85,7 +85,7 @@ DeferralPlistPath="/Library/Application Support/JAMF"
 OSMajorVersion="$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d '.' -f 1)"
 OSMinorVersion="$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d '.' -f 2)"
 OSPatchVersion="$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d '.' -f 3)"
-DeferralPlist="$DeferralPlistPath/com.custom.deferrals.plist"
+DeferralPlist="$DeferralPlistPath/com.example.deferrals.plist"
 BundleID="com.apple.SoftwareUpdate"
 DeferralType="count"
 DeferralValue="${4}"
@@ -98,19 +98,28 @@ AppleSUIcon="${7}"
 [[ -z "$TimeOutinSec" ]] && TimeOutinSec="900"
 [[ -z "$ITContact" ]] && ITContact="IT"
 
-CurrentDeferralValue="$(/usr/libexec/PlistBuddy -c "print :"$BundleID":count" "$DeferralPlist" 2>/dev/null)"
+CurrentDeferralValue="$(/usr/libexec/PlistBuddy -c "print :""$BundleID"":count" "$DeferralPlist" 2>/dev/null)"
 
 # Set up the deferral value if it does not exist already
 if [[ -z "$CurrentDeferralValue" ]] || [[ "$CurrentDeferralValue" == *"File Doesn't Exist"* ]]; then
     setDeferral "$BundleID" "$DeferralType" "$DeferralValue" "$DeferralPlist"
-    CurrentDeferralValue="$(/usr/libexec/PlistBuddy -c "print :"$BundleID":count" "$DeferralPlist" 2>/dev/null)"
+    CurrentDeferralValue="$(/usr/libexec/PlistBuddy -c "print :""$BundleID"":count" "$DeferralPlist" 2>/dev/null)"
 fi
 
 jamfHelper="/Library/Application Support/JAMF/bin/jamfHelper.app/Contents/MacOS/jamfHelper"
-jamf="/usr/local/bin/jamf"
+### currently unused may be required in the future
+#jamf="/usr/local/bin/jamf"
 
 # Path to temporarily store list of software updates. Avoids having to re-run the softwareupdate command multiple times.
+# Store list of software updates in /tmp which gets cleared periodically by the OS and on restarts
+# UPDATED:2/11/2021 moving to top of script to run at restart
+# UPDATED:2/11/2021 store packages to be installed in PackageLabels
 ListOfSoftwareUpdates="/tmp/ListOfSoftwareUpdates"
+{ /usr/sbin/softwareupdate -l > "$ListOfSoftwareUpdates"; } 2>&1 
+
+UpdatesNoRestart=$(/usr/bin/grep -i recommended < "$ListOfSoftwareUpdates" | /usr/bin/grep -v -i restart | /usr/bin/cut -d , -f 1 | /usr/bin/sed -e 's/^[[:space:]]*//' | /usr/bin/sed -e 's/^Title:\ *//')
+RestartRequired=$(/usr/bin/grep -i restart < "$ListOfSoftwareUpdates" | /usr/bin/grep -v '\*' | /usr/bin/cut -d , -f 1 | /usr/bin/sed -e 's/^[[:space:]]*//' | /usr/bin/sed -e 's/^Title:\ *//')
+PackageLabels=$(/usr/bin/grep -i label < "$ListOfSoftwareUpdates" | /usr/bin/cut -d , -f 1 | /usr/bin/sed 's/.*Label:\ *//g')
 
 # If non-existent path has been supplied, set appropriate Software Update icon depending on OS version
 if [[ ! -e "$AppleSUIcon" ]]; then
@@ -151,8 +160,10 @@ If the error persists, please contact $ITContact."
 NoACPower="The computer is currently running off battery and is not plugged into a power source."
 
 # Standard Update Message
+# UPDATED:2/11/2021 added package labels to StandardUpdatePrompt
 StandardUpdatePrompt="There is an OS update available for your Mac. Please click Continue to proceed to Software Update to run this update. If you are unable to start the process at this time, you may choose to postpone by one day.
-
+Available updates:
+$PackageLabels
 Attempts left to postpone: $CurrentDeferralValue
 
 You may install macOS software updates at any time $SUGuide"
@@ -200,9 +211,9 @@ updateCLI (){
     
     ## Get the Process ID of the last command run in the background ($!) and wait for it to complete (wait)
     # If you don't wait, the computer may take a restart action before updates are finished
-    SUPID=$(echo "$!")
+    SUPID="$!"
     
-    wait $SUPID
+    wait "$SUPID"
     
     SU_EC=$?
     
@@ -218,7 +229,7 @@ updateRestartAction (){
     #   To install these updates, your computer must shut down. Your computer will automatically start up to finish installation.
     #   Installation will not complete successfully if you choose to restart your computer instead of shutting down.
     #   Please call halt(8) or select Shut Down from the Apple menu. To automate the shutdown process with softwareupdate(8), use --restart.
-    if [[ "$(/bin/cat "$ListOfSoftwareUpdates" | /usr/bin/grep -E "Please call halt")" || "$(/bin/cat "$ListOfSoftwareUpdates" | /usr/bin/grep -E "your computer must shut down")" ]] && [[ "$SEPType" ]]; then
+    if /usr/bin/grep -E "Please call halt" < "$ListOfSoftwareUpdates" || /usr/bin/grep -E "your computer must shut down" < "$ListOfSoftwareUpdates" && [[ "$SEPType" ]]; then
         if [[ "$OSMajorVersion" -eq 10 && "$OSMinorVersion" -eq 13 && "$OSPatchVersion" -ge 4 ]] || [[ "$OSMajorVersion" -eq 10 && "$OSMinorVersion" -ge 14 ]] || [[ "$OSMajorVersion" -ge 11 ]]; then
             # Resetting the deferral count
             setDeferral "$BundleID" "$DeferralType" "$DeferralValue" "$DeferralPlist"
@@ -243,9 +254,9 @@ updateRestartAction (){
 updateGUI (){
     # Update through the GUI
     if [[ "$OSMajorVersion" -ge 11 ]] || [[ "$OSMajorVersion" -eq 10 && "$OSMinorVersion" -ge 14 ]]; then
-        /bin/launchctl $LMethod $LID /usr/bin/open "/System/Library/CoreServices/Software Update.app"
+        /bin/launchctl "$LMethod" "$LID" /usr/bin/open "/System/Library/CoreServices/Software Update.app"
     elif [[ "$OSMajorVersion" -eq 10 && "$OSMinorVersion" -ge 8 && "$OSMinorVersion" -le 13 ]]; then
-        /bin/launchctl $LMethod $LID /usr/bin/open macappstore://showUpdatesPage
+        /bin/launchctl "$LMethod" "$LID" /usr/bin/open macappstore://showUpdatesPage
     fi
 }
 
@@ -253,7 +264,7 @@ updateGUI (){
 fvStatusCheck (){
     # Check to see if the encryption process is complete
     FVStatus="$(/usr/bin/fdesetup status)"
-    if [[ $(/usr/bin/grep -q "Encryption in progress" <<< "$FVStatus") ]]; then
+    if /usr/bin/grep -q "Encryption in progress" <<< "$FVStatus"; then
         echo "The encryption process is still in progress."
         echo "$FVStatus"
         exit 13
@@ -265,7 +276,7 @@ runUpdates (){
     "$jamfHelper" -windowType hud -lockhud -title "Apple Software Update" -description "$HUDMessage""START TIME: $(/bin/date +"%b %d %Y %T")" -icon "$AppleSUIcon" &>/dev/null &
     
     ## We'll need the pid of jamfHelper to kill it once the updates are complete
-    JHPID=$(echo "$!")
+    JHPID="$!"
     
     ## Run the jamf policy to insall software updates
     SU_EC="$(updateCLI)"
@@ -275,8 +286,8 @@ runUpdates (){
     
     # softwareupdate does not exit with error when insufficient space is detected
     # which is why we need to get ahead of that error
-    if [[ "$(/bin/cat "$ListOfSoftwareUpdates" | /usr/bin/grep -E "Not enough free disk space")" ]]; then
-        SpaceError=$(echo "$(/bin/cat "$ListOfSoftwareUpdates" | /usr/bin/grep -E "Not enough free disk space" | /usr/bin/tail -n 1)")
+    if /usr/bin/grep -E "Not enough free disk space" < "$ListOfSoftwareUpdates"; then
+        SpaceError=$(/usr/bin/grep -E "Not enough free disk space" < "$ListOfSoftwareUpdates" | /usr/bin/tail -n 1)
         AvailableFreeSpace=$(/bin/df -g / | /usr/bin/awk '(NR == 2){print $4}')
         
         echo "$SpaceError"
@@ -320,12 +331,6 @@ checkForDisplaySleepAssertions() {
     fi
 }
 
-# Store list of software updates in /tmp which gets cleared periodically by the OS and on restarts
-/usr/sbin/softwareupdate -l 2>&1 > "$ListOfSoftwareUpdates"
-
-UpdatesNoRestart=$(/bin/cat "$ListOfSoftwareUpdates" | /usr/bin/grep -i recommended | /usr/bin/grep -v -i restart | /usr/bin/cut -d , -f 1 | /usr/bin/sed -e 's/^[[:space:]]*//' | /usr/bin/sed -e 's/^Title:\ *//')
-RestartRequired=$(/bin/cat "$ListOfSoftwareUpdates" | /usr/bin/grep -i restart | /usr/bin/grep -v '\*' | /usr/bin/cut -d , -f 1 | /usr/bin/sed -e 's/^[[:space:]]*//' | /usr/bin/sed -e 's/^Title:\ *//')
-
 # Determine Secure Enclave version
 SEPType="$(/usr/sbin/system_profiler SPiBridgeDataType | /usr/bin/awk -F: '/Model Name/ { gsub(/.*: /,""); print $0}')"
 
@@ -367,7 +372,7 @@ else
     if [[ "$RestartRequired" != "" ]]; then
         if [[ "$CurrentDeferralValue" -gt 0 ]]; then
             # Reduce the timer by 1. The script will run again the next day
-            let CurrTimer=$CurrentDeferralValue-1
+            CurrTimer=$((CurrentDeferralValue-1)) 
             setDeferral "$BundleID" "$DeferralType" "$CurrTimer" "$DeferralPlist"
             
             # If someone is logged in and they have not canceled $DeferralValue times already, prompt them to install updates that require a restart and state how many more times they can press 'cancel' before updates run automatically.
@@ -402,7 +407,18 @@ fi
 # Install updates that do not require a restart
 # Future Fix: Might want to see if Safari and iTunes are running as sometimes these apps sometimes do not require a restart but do require that the apps be closed
 # A simple stop gap to see if either process is running.
-if [[ "$UpdatesNoRestart" != "" ]] && [[ ! "$(/bin/ps -axc | /usr/bin/grep -e Safari$)" ]] && [[ ! "$(/bin/ps -axc | /usr/bin/grep -e iTunes$)" ]]; then
+# UPDATED:2/11/2021 if there is a safari or itunes update in the $ListOfSoftwareUpdates are found, then kills their process if they are running.
+if [[ $(/usr/bin/grep -oc safari < "$ListOfSoftwareUpdates") -ge "1" ]] ; then
+    if [[ $(/usr/bin/pgrep Safari$) != "" ]]; then
+        /usr/bin/pkill Safari$
+    fi
+fi
+if [[ $(/usr/bin/grep -oc itunes < "$ListOfSoftwareUpdates") -ge "1" ]] ; then
+    if [[ $(/usr/bin/pgrep iTunes$) != "" ]]; then
+        /usr/bin/pkill iTunes$
+    fi
+fi
+if [[ "$UpdatesNoRestart" != "" ]]; then
     powerCheck
     updateCLI &>/dev/null
 fi
